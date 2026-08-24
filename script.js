@@ -468,11 +468,14 @@ if(face==null){
   busy=false;
   return;
 }
-const exposureDifference=Math.abs(ex-targetExposure);
-
-const exposureScore=Math.max(
-  0,
-  27-exposureDifference*1.5
+const exposureScore=Math.round(
+  Math.max(
+    0,
+    Math.min(
+      27,
+      ex*27/100
+    )
+  )
 );
 
 const faceScore=face*0.70;
