@@ -20,7 +20,8 @@ let testLandmarks = null;
 let targetImageReady = false;
 let testObjectUrl = null;
 let showTestLandmarks = true;
-let showTargetLandmarks = true;
+let showTargetLandmarks = false;
+let targetExposureRate = 1;
 const TARGET_PATH = 'target.png';
 
 function wait(ms){return new Promise(r=>setTimeout(r,ms));}
@@ -106,8 +107,8 @@ function drawLandmarks(canvas,img,lm,visible=true){
 function resizeCanvasToImage(canvas,img){canvas.style.aspectRatio=`${img.naturalWidth}/${img.naturalHeight}`;canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;}
 
 function estimateExposure(img){
-  // Game-only heuristic: estimate visible skin-like pixels in the non-face image area.
-  // It never uploads the image. This intentionally avoids claiming medical/identity accuracy.
+  // Game-only heuristic: estimate visible body/skin-like pixels locally in the browser.
+  // The result is a percentage for display; final scoring compares it with the target image's rate.
   const maxSide=420, scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
   const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
   const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,0,w,h);
@@ -120,22 +121,21 @@ function estimateExposure(img){
     if(looksSkin)skin++; if(nonDark)personish++;
   }
   const raw=skin/Math.max(personish,1);
-  return clamp(Math.round(Math.pow(clamp((raw-0.04)/0.30,0,1),0.78)*30),0,30);
+  return clamp(Math.round(Math.pow(clamp((raw-0.04)/0.30,0,1),0.78)*100),0,100);
 }
 
 function setAnalysis(title,text,pct){els.analysisTitle.textContent=title;els.analysisText.textContent=text;els.progressBar.style.width=`${pct}%`;}
 function toast(msg){els.toast.textContent=msg;els.toast.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>els.toast.classList.remove('show'),2200);}
 function sparks(score){const count=score>=95?42:score>=85?24:score>=70?12:4;for(let i=0;i<count;i++){const s=document.createElement('div');s.className='spark '+(i%3===0?'star':'');s.style.left=(30+Math.random()*40)+'%';s.style.top=(20+Math.random()*45)+'%';s.style.setProperty('--dx',(Math.random()*260-130)+'px');s.style.setProperty('--dy',(Math.random()*-250-40)+'px');els.sparkLayer.appendChild(s);setTimeout(()=>s.remove(),1400)}}
-function verdict(score){if(score>=97)return ['GOLDEN MATCH!!!','AIも困惑。ほぼ本人。'];if(score>=90)return ['本人級！！！','測定器がかなり喜んでいます。'];if(score>=80)return ['かなり似てる！！','顔面一致度、高め。'];if(score>=65)return ['そこそこ一致','似ている要素はあります。'];if(score>=45)return ['微妙に一致','測定器は悩んでいます。'];return ['別人判定寄り','顔面測定器、静かに首をかしげる。'];}
-
-// 現行のスコアをかなり厳しく再マッピングする。
-// 70点→40点、90点→97点、100点→100点となるように、
-// 中〜高得点域を極端に引き締める。
-function strictScore(raw){
-  raw=clamp(raw);
-  if(raw<=70) return Math.round(raw*(40/70));
-  if(raw<=90) return Math.round(40+(raw-70)*(57/20));
-  return Math.round(97+(raw-90)*0.3);
+function verdict(score){
+  if(score>=95)return ['この世界が丸い球体で出来ていると初めて気づいた人はこの銀河でさえも球体で構成された円で出来ていることに気づいていたのだろうか。この世はこんなにも円で構成されているのに円だけが数学ではっきりした他を持たない。自分自身が原子で構成されているのにもかかわらず自分自身を求めることはできないのだ。',''];
+  if(score>=90)return ['んっ…','測定器が何かを感じています。'];
+  if(score>=80)return ['ごっつええなぁ','かなり好み寄り。'];
+  if(score>=70)return ['ふう','なかなか来ています。'];
+  if(score>=60)return ['まあ、いけるべ','測定器、うなずいています。'];
+  if(score>=50)return ['今日は仕方なし、これでいいや','測定器は一応納得しています。'];
+  if(score>=40)return ['いまいちやな','もう一発いってみましょう。'];
+  return ['まだまだやな','測定器は静かです。'];
 }
 
 async function initFaceMesh(){
@@ -165,10 +165,10 @@ async function loadTarget(){
     setAnalysis('TARGET FACEをスキャン中……','基準顔のランドマークを取得しています。',35);
     const faces=await detect(els.targetImage);
     if(faces.length!==1)throw new Error(faces.length===0?'基準顔が見つかりませんでした。':'基準画像に複数の顔があります。');
-    targetLandmarks=faces[0];targetImageReady=true;resizeCanvasToImage(els.targetCanvas,els.targetImage);drawLandmarks(els.targetCanvas,els.targetImage,targetLandmarks,showTargetLandmarks);
+    targetLandmarks=faces[0];targetExposureRate=Math.max(1,estimateExposure(els.targetImage));targetImageReady=true;resizeCanvasToImage(els.targetCanvas,els.targetImage);drawLandmarks(els.targetCanvas,els.targetImage,targetLandmarks,showTargetLandmarks);
     setAnalysis('TARGET LOCKED.','基準顔を100点の比較基準としてロックしました。',100);
     els.fileStatus.textContent='READY';els.fileStatus.classList.add('ready');
-  }catch(err){setAnalysis('AI起動失敗！','ブラウザでAIモデルを読み込めませんでした。ネット接続とローカルサーバーを確認してください。',0);toast(err.message);}
+  }catch(err){setAnalysis('測定器、準備中……','AI測定器の準備を続けています。しばらくしてもう一度画像を投入してください。',0);}
 }
 
 async function processTest(file){
@@ -187,26 +187,29 @@ async function processTest(file){
     testLandmarks=faces[0];resizeCanvasToImage(els.testCanvas,els.testImage);drawLandmarks(els.testCanvas,els.testImage,testLandmarks,showTestLandmarks);
     setAnalysis('特徴量を比較中……','基準顔との距離を計算しています……',55);await wait(350);
     const scores=computeFaceScores(targetLandmarks,testLandmarks);
-    setAnalysis('身体領域ボーナス計算中……','画像内の視認可能領域をスキャンしています……',75);await wait(350);
-    const exposure=estimateExposure(els.testImage);
-    const face70=Math.round(scores.face*.7);
-    const rawTotal=clamp(face70+exposure,0,100);
+    setAnalysis('全体の好み度を計算中……','顔と画像全体の特徴をまとめています……',75);await wait(350);
+    const exposureRate=estimateExposure(els.testImage);
+    // 顔75% + 露出率25%で100点満点に統合。基準画像の露出率を25点相当(100%)として正規化。
+    const exposureMatch=clamp(Math.round((exposureRate/targetExposureRate)*100));
+    const rawTotal=clamp(scores.face*.75+exposureMatch*.25,0,100);
     const total=strictScore(rawTotal);
-    showResult(scores,face70,exposure,total,rawTotal);
-  }catch(err){setAnalysis('AIチェック',err.message||'AI解析を完了できませんでした。',0);toast(err.message||'解析を完了できませんでした。');}
+    showResult(scores,exposureRate,total,rawTotal);
+  }catch(err){setAnalysis('測定器、再確認中……','画像をもう一度確認しています。',0);}
 }
-function showResult(scores,face70,exposure,total,rawTotal){
-  els.faceScore.textContent=face70;els.exposureScore.textContent=exposure;els.totalScore.textContent=total;
+function showResult(scores,exposureRate,total,rawTotal){
+  els.faceScore.textContent='';
+  els.exposureScore.textContent=exposureRate;
+  els.totalScore.textContent=total;
   els.shapeScore.textContent=Math.round(scores.shape)+'%';els.eyeScore.textContent=Math.round(scores.eyes)+'%';els.noseScore.textContent=Math.round(scores.nose)+'%';els.mouthScore.textContent=Math.round(scores.mouth)+'%';
-  const [v,sub]=verdict(total);els.verdict.textContent=v+' — '+sub;
+  const [v,sub]=verdict(total);els.verdict.textContent=v+(sub?' — '+sub:'');
   els.resultSection.classList.remove('hidden');els.controls.classList.remove('hidden');
   document.body.classList.toggle('high',total>=80);
   els.meterBar.style.height=`${Math.max(3,total)}%`;
-  els.meterRank.textContent=total>=95?'ULTRA RARE':total>=85?'GOLD':'NORMAL';
-  els.meterCaption.textContent=total>=95?'測定器、金色の何かを感じています。':total>=80?'ぐいーん！！かなり伸びました。':total>=60?'測定器、ちょっと嬉しそう。':'測定器は静かです。';
+  els.meterRank.textContent=total>=95?'ULTRA RARE':total>=85?'GOLD':total>=70?'HOT':'NORMAL';
+  els.meterCaption.textContent=total>=95?'測定器、世界の真理に触れました。':total>=80?'ぐいーん！！ごっつ伸びました。':total>=70?'測定器、ちょっと照れています。':total>=60?'測定器、ちょっと嬉しそう。':'測定器は静かです。';
   els.meterFlare.classList.toggle('active',total>=80);
   els.meterDevice.classList.toggle('balls-lit',total>=70);
-  setAnalysis('測定完了！！',`${v}　顔・露出の評価を算出しました。`,100);
+  setAnalysis('測定完了！！',v,100);
   setTimeout(()=>els.resultSection.scrollIntoView({behavior:'smooth',block:'start'}),150);
   if(total>=70)sparks(total);
 }

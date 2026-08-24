@@ -75,8 +75,8 @@
       <div class="result-main card">
         <div class="result-kicker">FINAL VERDICT</div>
         <div class="score-wrap">
-          <div class="score-label">FACE MATCH</div>
-          <div class="score"><span id="faceScore">--</span><b>/ 70</b></div>
+          <div class="score-label">TOTAL SCORE</div>
+          <div class="score"><span id="totalScore">--</span><b>/ 100</b></div>
           <div class="verdict" id="verdict">測定待ち</div>
         </div>
         <div class="metric-row">
@@ -85,13 +85,9 @@
           <div class="metric"><span>NOSE</span><strong id="noseScore">--</strong></div>
           <div class="metric"><span>MOUTH / JAW</span><strong id="mouthScore">--</strong></div>
         </div>
-        <div class="bonus-box">
-          <div><span>EXPOSURE SCORE</span><small>画像内で視認できる身体領域を評価に含めています</small></div>
-          <strong>+<i id="exposureScore">0</i><em>/ 30</em></strong>
-        </div>
-        <div class="total-box">
-          <span>TOTAL</span>
-          <strong id="totalScore">--</strong><small>/ 100</small>
+        <div class="bonus-box exposure-box">
+          <div><span>EXPOSURE RATE</span><small>画像内で視認できる身体領域の割合</small></div>
+          <strong><i id="exposureScore">0</i><em>%</em></strong>
         </div>
         <button class="gold-btn wide" id="resetBtn">別の顔を測る</button>
       </div>
