@@ -172,13 +172,13 @@ function signature(lm){
   const n=centerScale(lm);
 
   /*
-   * 顔認証用特徴点
+   * 顔認証用の特徴点
    *
-   * 表情や撮影条件に比較的強い部分を中心に使用。
+   * 位置そのものだけではなく、
+   * 顔の各パーツ同士の関係を後で比較する。
    */
-
   const ids=[
-    // 顔の輪郭
+    // 輪郭
     10,152,
     234,454,
     127,356,
@@ -186,22 +186,23 @@ function signature(lm){
     132,361,
     58,288,
 
-    // 目
+    // 左目
     33,133,
     159,145,
+
+    // 右目
     362,263,
     386,374,
 
     // 鼻
     1,2,4,5,6,
-    19,94,
-    168,
+    19,94,168,
 
     // 口
     61,291,
     13,14,
 
-    // 顔中央・その他
+    // 顔中央・補助
     50,280,
     199,175,
     18
@@ -220,52 +221,87 @@ function signature(lm){
 
 
 /*
- * 点群そのものではなく、
- * 「点と点の距離の比率」も比較する。
- *
- * これにより
- * ・写真の拡大縮小
- * ・多少の顔の位置ズレ
- * ・カメラとの距離
- * の影響をさらに減らす。
+ * 2点間の距離
  */
-function pairDistances(sig){
+function pointDistance(a,b){
+  return Math.hypot(
+    a.x-b.x,
+    a.y-b.y
+  );
+}
+
+
+/*
+ * 顔の特徴点同士の相対距離
+ *
+ * 写真の大きさが変わっても
+ * 顔そのものの比率は比較しやすい。
+ */
+function relationalFeatures(s){
 
   const pairs=[
-    [0,1],    // 顔の上下
-    [2,3],    // 顔の横幅
-    [4,5],    // 左目幅
-    [6,7],    // 右目幅
-    [8,9],    // 鼻
-    [10,11],  // 口幅
-    [12,13],  // 顔横
-    [14,15],
-    [16,17],
-    [18,19],
-    [20,21],
-    [22,23]
+    // 顔全体
+    [0,1],
+    [2,3],
+
+    // 目
+    [4,5],
+    [6,7],
+
+    // 左右の目
+    [4,6],
+    [5,7],
+
+    // 目～鼻
+    [4,8],
+    [6,8],
+
+    // 鼻～口
+    [8,10],
+    [9,11],
+
+    // 口
+    [10,11],
+
+    // 顔横
+    [2,4],
+    [3,6],
+
+    // 顔縦
+    [0,8],
+    [8,1],
+
+    // 中央
+    [8,12],
+    [10,12],
+
+    // その他
+    [12,13],
+    [13,14],
+    [14,15]
   ];
 
   return pairs.map(([a,b])=>{
-    const p=sig[a];
-    const q=sig[b];
-
-    return Math.hypot(
-      p.x-q.x,
-      p.y-q.y
-    );
+    return pointDistance(s[a],s[b]);
   });
 }
 
 
 /*
- * ランドマーク形状の比較
+ * ランドマークの形状比較
  */
 function shapeSimilarity(a,b){
 
-  if(!a||!b||a.length!==b.length)return 0;
+  if(!a||!b||a.length!==b.length){
+    return 0;
+  }
 
-  let distance=0;
+  /*
+   * -------------------------
+   * ① 点そのものの一致
+   * -------------------------
+   */
+  let pointError=0;
 
   for(let i=0;i<a.length;i++){
 
@@ -273,120 +309,138 @@ function shapeSimilarity(a,b){
     const dy=a[i].y-b[i].y;
 
     /*
-     * Zは顔の向きによる変化が大きいため
-     * XYより弱くする。
+     * Zは顔の向きによる影響が大きいので
+     * XYよりかなり弱くする。
      */
-    const dz=(a[i].z-b[i].z)*0.25;
+    const dz=(a[i].z-b[i].z)*0.20;
 
-    distance+=Math.sqrt(
+    pointError+=Math.sqrt(
       dx*dx+
       dy*dy+
       dz*dz
     );
   }
 
-  distance/=a.length;
+  pointError/=a.length;
 
 
   /*
-   * 相対距離の比較
+   * -------------------------
+   * ② 顔パーツの相対位置
+   * -------------------------
    */
-  const da=pairDistances(a);
-  const db=pairDistances(b);
+  const ra=relationalFeatures(a);
+  const rb=relationalFeatures(b);
 
-  let ratioError=0;
+  let relationError=0;
+  let relationCount=0;
 
-  for(let i=0;i<da.length;i++){
+  for(let i=0;i<ra.length;i++){
 
-    const aa=da[i];
-    const bb=db[i];
+    if(ra[i]<0.0001||rb[i]<0.0001){
+      continue;
+    }
 
-    if(aa<0.0001||bb<0.0001)continue;
-
-    ratioError+=Math.abs(
-      Math.log(aa/bb)
+    /*
+     * 比率として比較することで、
+     * 顔の大きさの違いを吸収。
+     */
+    relationError+=Math.abs(
+      Math.log(ra[i]/rb[i])
     );
+
+    relationCount++;
   }
 
-  ratioError/=da.length;
+  if(relationCount>0){
+    relationError/=relationCount;
+  }
 
 
   /*
-   * ランドマーク一致度
-   *
-   * distanceが小さいほど高得点。
+   * -------------------------
+   * ③ スコア化
+   * -------------------------
    */
+
   const pointScore=
-    100*Math.exp(-distance*4.0);
+    100*Math.exp(-pointError*3.0);
+
+  const relationScore=
+    100*Math.exp(-relationError*2.5);
 
 
   /*
-   * 顔パーツ間の比率一致度
+   * 点そのものより、
+   * 顔の比率を少し重視する。
    */
-  const ratioScore=
-    100*Math.exp(-ratioError*2.2);
-
-
-  /*
-   * 形状を重視。
-   */
-  const score=
-    pointScore*0.60+
-    ratioScore*0.40;
-
   return Math.max(
     0,
-    Math.min(100,score)
+    Math.min(
+      100,
+      pointScore*0.45+
+      relationScore*0.55
+    )
   );
 }
 
 
 /*
- * 最終的な顔類似度
+ * 最終類似度
  */
 function similarity(a,b){
 
-  if(!a||!b)return null;
+  if(!a||!b){
+    return null;
+  }
 
   const raw=shapeSimilarity(a,b);
 
   /*
-   * 高い一致度はそのまま評価。
+   * 高一致
    *
-   * 中間域は少し厳しくする。
-   * これによって別人が中途半端に
-   * 高得点になるのを防ぐ。
+   * 同じ人物の別写真を
+   * ある程度許容する。
    */
-  let score;
+  if(raw>=88){
 
-  if(raw>=90){
-
-    score=
-      92+
-      (raw-90)*0.8;
-
-  }else if(raw>=75){
-
-    score=
-      70+
-      (raw-75)*1.47;
-
-  }else if(raw>=55){
-
-    score=
-      40+
-      (raw-55)*1.5;
-
-  }else{
-
-    score=
-      raw*0.70;
+    return Math.min(
+      100,
+      90+(raw-88)*0.9
+    );
   }
 
-  return Math.max(
-    0,
-    Math.min(100,score)
-  );
+
+  /*
+   * 中～高一致
+   *
+   * 同一人物の別写真が
+   * この領域に入ることを想定。
+   */
+  if(raw>=65){
+
+    return 65+
+      (raw-65)*0.95;
+  }
+
+
+  /*
+   * 中間領域
+   *
+   * 別人がここに入った場合は
+   * 少し厳しくする。
+   */
+  if(raw>=45){
+
+    return 35+
+      (raw-45)*1.0;
+  }
+
+
+  /*
+   * 低一致
+   */
+  return raw*0.65;
 }
 function exposure(img){
  // Visual skin-area proxy, excluding the central face area so the face itself does not inflate exposure.
