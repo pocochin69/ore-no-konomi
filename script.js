@@ -72,67 +72,24 @@ const ex=exposure(img);exposureEl.textContent=ex+"%";exposureBar.style.width=ex+
 let face=targetSignature&&lastLM?similarity(signature(lastLM),targetSignature):null;
 
 if(face==null){
-  note.textContent="先に基準写真を設定してください。";
+  note.textContent="基準画像の解析に失敗しました。";
   statusEl.textContent="測定器、待機中。";
   busy=false;
   return;
 }
-
 const raw=face;
 const finalScore=strictScore(raw);
 scoreEl.textContent=finalScore;commentEl.textContent=commentFor(finalScore);
 bg(finalScore);meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,finalScore/100)})`;meter.classList.toggle("hot",finalScore>=70);
-note.textContent=targetSignature
-  ?"測定完了。顔の特徴を比較しました。"
-  :"基準写真を設定してください。";
+note.textContent="測定完了。顔の特徴を比較しました。";
 statusEl.textContent="測定完了！";
  }catch(e){console.warn(e);result.hidden=false;scoreEl.textContent="--";commentEl.textContent="写真をもう一度投入してみて。";note.textContent="測定器、待機中。";statusEl.textContent="測定器、待機中。"}
  finally{busy=false}
 }
-targetBtn.onclick=e=>{
- e.stopPropagation();
- targetInput.click();
-};
-
 chooseBtn.onclick=e=>{
  e.stopPropagation();
  fileInput.click();
 };
-
-targetInput.onchange=async()=>{
- const f=targetInput.files[0];
- if(!f)return;
-
- try{
-  const t=new Image();
-  t.src=URL.createObjectURL(f);
-  await t.decode();
-
-  const arr=await Promise.race([
-   faceAI(t),
-   new Promise(r=>setTimeout(()=>r([]),12000))
-  ]);
-
-  if(arr.length!==1){
-   targetStatus.textContent=arr.length>1
-    ?"基準写真：顔が複数あります"
-    :"基準写真：顔を検出できませんでした";
-   return;
-  }
-
-  targetLM=arr[0];
-  targetSignature=signature(targetLM);
-
-  targetStatus.textContent="基準写真：設定完了（100点基準）";
-  statusEl.textContent="基準写真を登録しました。比較写真を投入してください。";
-
-  URL.revokeObjectURL(t.src);
- }catch(e){
-  console.warn("Target setup failed",e);
-  targetStatus.textContent="基準写真：読み込み失敗";
- }
-};
-
 fileInput.onchange=()=>{
  const f=fileInput.files[0];
  if(f)measure(f);
@@ -151,10 +108,10 @@ toggle.onchange=()=>drawLM(lastLM);
 again.onclick=()=>{
  result.hidden=true;
  fileInput.value="";
- statusEl.textContent=targetSignature
-  ?"基準写真を設定済み。比較写真を投入してください。"
-  :"測定器、待機中。";
+ statusEl.textContent="測定器、待機中。";
  window.scrollTo({top:0,behavior:"smooth"});
 };
 
 window.onresize=()=>drawLM(lastLM);
+
+loadTarget();
