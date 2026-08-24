@@ -18,8 +18,54 @@ const comments=[
 function commentFor(s){let c="測定完了。";for(const [n,t] of comments)if(s>=n)c=t;return c}
 function strictScore(x){x=Math.max(0,Math.min(100,x));if(x<=70)return Math.round(x*40/70);if(x<=90)return Math.round(40+(x-70)*57/20);return Math.round(97+(x-90)*3/10)}
 function bg(s){const h=220-s*1.7;document.body.style.background=`radial-gradient(circle at 50% -10%,hsl(${h},70%,40%) 0,hsl(${h-18},60%,20%) 40%,#1a0d14 100%)`}
-function drawLM(lm){canvas.width=img.clientWidth*devicePixelRatio;canvas.height=img.clientHeight*devicePixelRatio;canvas.style.width=img.clientWidth+"px";canvas.style.height=img.clientHeight+"px";ctx.clearRect(0,0,canvas.width,canvas.height);if(!toggle.checked||!lm)return;ctx.fillStyle="#ffe080";for(const p of lm){ctx.beginPath();ctx.arc(p.x*canvas.width,p.y*canvas.height,1.5*devicePixelRatio,0,Math.PI*2);ctx.fill()}}
-async function faceAI(image){
+function drawLM(lm){
+ canvas.width=img.clientWidth*devicePixelRatio;
+ canvas.height=img.clientHeight*devicePixelRatio;
+ canvas.style.width=img.clientWidth+"px";
+ canvas.style.height=img.clientHeight+"px";
+
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ if(!toggle.checked||!lm)return;
+
+ ctx.fillStyle="#ffe080";
+
+ for(const p of lm){
+  ctx.beginPath();
+  ctx.arc(
+   p.x*canvas.width,
+   p.y*canvas.height,
+   1.5*devicePixelRatio,
+   0,
+   Math.PI*2
+  );
+  ctx.fill();
+ }
+
+ // 左目
+ const leftEye=[33,133,159,145,160,161,158,144,153,154,155];
+
+ // 右目
+ const rightEye=[362,263,386,374,387,388,385,373,380,381,382];
+
+ // 目のランドマークを大きく表示
+ ctx.fillStyle="#00ffff";
+
+ for(const i of [...leftEye,...rightEye]){
+  const p=lm[i];
+  if(!p)continue;
+
+  ctx.beginPath();
+  ctx.arc(
+   p.x*canvas.width,
+   p.y*canvas.height,
+   4*devicePixelRatio,
+   0,
+   Math.PI*2
+  );
+  ctx.fill();
+ }
+}
  try{
   const m=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm");
   const fs=await m.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm");
