@@ -518,7 +518,7 @@ again.onclick=()=>{
 };
 
 window.onresize=()=>drawLM(lastLM);
-let targetExposure=25;
+
 async function loadTarget(){
   try{
     const t=new Image();
@@ -533,11 +533,6 @@ async function loadTarget(){
     if(arr.length===1){
       targetLM=arr[0];
       targetSignature=signature(targetLM);
-
-      // 基準写真の露出度を保存
-      targetExposure=exposure(t);
-
-      console.log("基準写真の露出度:",targetExposure);
     }
   }catch(e){
     console.warn("Target load failed",e);
