@@ -21,8 +21,8 @@ function bg(s){const h=220-s*1.7;document.body.style.background=`radial-gradient
 function drawLM(lm){canvas.width=img.clientWidth*devicePixelRatio;canvas.height=img.clientHeight*devicePixelRatio;canvas.style.width=img.clientWidth+"px";canvas.style.height=img.clientHeight+"px";ctx.clearRect(0,0,canvas.width,canvas.height);if(!toggle.checked||!lm)return;ctx.fillStyle="#ffe080";for(const p of lm){ctx.beginPath();ctx.arc(p.x*canvas.width,p.y*canvas.height,1.5*devicePixelRatio,0,Math.PI*2);ctx.fill()}}
 async function faceAI(image){
  try{
-  const m=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm");
-  const fs=await m.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm");
+  const m=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.24/+esm");
+  const fs=await m.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.24/wasm");
   const detector=await m.FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},runningMode:"IMAGE",numFaces:2});
   const r=detector.detect(image);detector.close?.();return r.faceLandmarks||[];
  }catch(e){console.warn("Face AI unavailable",e);return []}
