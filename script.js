@@ -1,262 +1,124 @@
-/* 俺の好み！で一発 // local browser game
-   Target image is bundled as target.png. Face analysis uses MediaPipe Face Mesh.
-   No uploaded image is sent to a server by this application.
-*/
-const $ = (s) => document.querySelector(s);
-const els = {
-  fileInput: $('#fileInput'), dropZone: $('#dropZone'), chooseBtn: $('#chooseBtn'),
-  targetImage: $('#targetImage'), targetCanvas: $('#targetLandmarks'), testImage: $('#testImage'), testCanvas: $('#testLandmarks'),
-  testPreview: $('#testPreview'), fileStatus: $('#fileStatus'), analysisTitle: $('#analysisTitle'), analysisText: $('#analysisText'),
-  progressBar: $('#progressBar'), resultSection: $('#resultSection'), controls: $('#controls'),
-  faceScore: $('#faceScore'), exposureScore: $('#exposureScore'), totalScore: $('#totalScore'), verdict: $('#verdict'),
-  shapeScore: $('#shapeScore'), eyeScore: $('#eyeScore'), noseScore: $('#noseScore'), mouthScore: $('#mouthScore'),
-  meterBar: $('#meterBar'), meterRank: $('#meterRank'), meterCaption: $('#meterCaption'), meterFlare: $('#meterFlare'),
-  resetBtn: $('#resetBtn'), landmarkToggle: $('#landmarkToggle'), toast: $('#toast'), sparkLayer: $('#sparkLayer')
-};
+const $=s=>document.querySelector(s);
+const fileInput=$("#fileInput"), dropZone=$("#dropZone"), chooseBtn=$("#chooseBtn"), statusEl=$("#status");
+const result=$("#result"), testImage=$("#testImage"), canvas=$("#landmarkCanvas"), ctx=canvas.getContext("2d");
+const scoreEl=$("#score"), commentEl=$("#comment"), exposureEl=$("#exposureRate"), exposureBar=$("#exposureBar");
+const meter=$("#meter"), note=$("#measureNote"), toggle=$("#landmarkToggle"), again=$("#againBtn");
 
-let faceMesh;
-let targetLandmarks = null;
-let testLandmarks = null;
-let targetImageReady = false;
-let testObjectUrl = null;
-let showTestLandmarks = true;
-let showTargetLandmarks = false;
-let targetExposureRate = 1;
-const TARGET_PATH = 'target.png';
+let targetLandmarks=null, targetExposure=25, currentObjectUrl=null, busy=false;
+const comments=[
+  [40,"いまいちやな"],[50,"今日は仕方なし、これでいいや"],[60,"まあ、いけるべ"],[70,"ふう"],[80,"ごっつええなぁ"],[90,"んっ…"],
+  [95,"この世界が丸い球体で出来ていると初めて気づいた人はこの銀河でさえも球体で構成された円で出来ていることに気づいていたのだろうか。この世はこんなにも円で構成されているのに円だけが数学ではっきりした他を持たない。自分自身が原子で構成されているのにもかかわらず自分自身を求めることはできないのだ。"]
+];
 
-function wait(ms){return new Promise(r=>setTimeout(r,ms));}
-function clamp(v,a=0,b=100){return Math.max(a,Math.min(b,v));}
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);}
-function mid(a,b){return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,z:(a.z+b.z)/2};}
-function avg(points){const out={x:0,y:0,z:0}; points.forEach(p=>{out.x+=p.x;out.y+=p.y;out.z+=p.z||0}); return {x:out.x/points.length,y:out.y/points.length,z:out.z/points.length};}
-
-// MediaPipe's standard Face Mesh landmark indices.
-const IDX = {
-  leftEyeOuter:33,rightEyeOuter:263,leftEyeInner:133,rightEyeInner:362,
-  noseTip:1,noseLeft:129,noseRight:358,mouthL:61,mouthR:291,mouthTop:13,mouthBottom:14,
-  chin:152,forehead:10,leftCheek:234,rightCheek:454,leftBrow:105,rightBrow:334,
-  leftUpper:159,leftLower:145,rightUpper:386,rightLower:374
-};
-const contourIdx = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
-const eyeLIdx=[33,133,159,145,160,144,158,153];
-const eyeRIdx=[362,263,386,374,387,373,385,380];
-const noseIdx=[1,2,4,5,6,19,94,97,98,168,197,195,236,3];
-const mouthIdx=[61,291,13,14,78,308,80,310,81,311,82,312,87,317,95,324,178,402];
-const browIdx=[70,63,105,66,107,336,296,334,293,300];
-
-function normalizedPoints(lm){
-  const eyeMid = mid(lm[IDX.leftEyeOuter], lm[IDX.rightEyeOuter]);
-  const eyeDist = Math.max(dist(lm[IDX.leftEyeOuter], lm[IDX.rightEyeOuter]), 1e-5);
-  const left = lm[IDX.leftEyeOuter], right = lm[IDX.rightEyeOuter];
-  const angle = Math.atan2(right.y-left.y, right.x-left.x);
-  const cos=Math.cos(-angle), sin=Math.sin(-angle);
-  return lm.map(p=>{
-    const x=p.x-eyeMid.x, y=p.y-eyeMid.y;
-    return {x:(x*cos-y*sin)/eyeDist,y:(x*sin+y*cos)/eyeDist,z:(p.z||0)/eyeDist};
-  });
+function setStatus(t){statusEl.textContent=t}
+function commentFor(s){let v="測定完了。"; for(const [min,c] of comments) if(s>=min)v=c; return v}
+function strictScore(x){
+  // 厳しめ：旧70→約40、旧90→約97。0/100は維持。
+  x=Math.max(0,Math.min(100,x));
+  if(x<=70) return Math.round(x*(40/70));
+  if(x<=90) return Math.round(40+(x-70)*(57/20));
+  return Math.round(97+(x-90)*(3/10));
 }
-function featureVector(lm){
-  const n=normalizedPoints(lm);
-  const pick=(arr)=>arr.flatMap(i=>[n[i].x,n[i].y]);
-  const le=mid(n[IDX.leftEyeOuter],n[IDX.leftEyeInner]);
-  const re=mid(n[IDX.rightEyeOuter],n[IDX.rightEyeInner]);
-  const eyeDistance=dist(le,re);
-  const faceWidth=dist(n[IDX.leftCheek],n[IDX.rightCheek]);
-  const faceHeight=dist(n[IDX.forehead],n[IDX.chin]);
-  const noseWidth=dist(n[IDX.noseLeft],n[IDX.noseRight]);
-  const noseLen=dist(n[IDX.noseTip],n[IDX.forehead]);
-  const mouthWidth=dist(n[IDX.mouthL],n[IDX.mouthR]);
-  const noseMouth=dist(n[IDX.noseTip],mid(n[IDX.mouthTop],n[IDX.mouthBottom]));
-  const browNose=dist(mid(n[IDX.leftBrow],n[IDX.rightBrow]),n[IDX.noseTip]);
-  const noseChin=dist(n[IDX.noseTip],n[IDX.chin]);
-  const eyeHeights=[dist(n[IDX.leftUpper],n[IDX.leftLower]),dist(n[IDX.rightUpper],n[IDX.rightLower])];
-  const asymmetry=Math.abs(eyeHeights[0]-eyeHeights[1])+Math.abs(n[IDX.leftCheek].y-n[IDX.rightCheek].y);
-  return {
-    contour:pick(contourIdx), eyes:pick(eyeLIdx.concat(eyeRIdx)), nose:pick(noseIdx), mouth:pick(mouthIdx), brow:pick(browIdx),
-    ratios:[faceHeight/faceWidth,eyeDistance/faceWidth,noseWidth/faceWidth,noseLen/faceHeight,mouthWidth/faceWidth,noseMouth/faceHeight,browNose/faceHeight,noseChin/faceHeight],
-    asymmetry
-  };
+function bgFor(s){
+  const h=215-(Math.max(0,Math.min(100,s))*1.75);
+  document.body.style.background=`radial-gradient(circle at 50% -10%,hsl(${h},70%,38%) 0,hsl(${h-18},58%,20%) 42%,#170b18 100%)`;
 }
-function vecDistance(a,b){let sum=0,n=0; for(let i=0;i<a.length;i++){const d=a[i]-b[i];sum+=d*d;n++;} return Math.sqrt(sum/Math.max(n,1));}
-function similarity(a,b){return clamp(100*Math.exp(-3.0*vecDistance(a,b)));}
-
-// Strict final-score remapping. It intentionally compresses ordinary scores
-// and makes high scores much harder to reach. Required anchor points:
-// 70 -> 40, 90 -> 97, with smooth interpolation between them.
-function strictScore(raw){
-  const x=clamp(raw);
-  const points=[[0,0],[40,12],[50,20],[60,29],[70,40],[75,54],[80,68],[85,83],[90,97],[95,98.5],[100,100]];
-  for(let i=1;i<points.length;i++){
-    const [x1,y1]=points[i-1],[x2,y2]=points[i];
-    if(x<=x2){
-      const t=(x-x1)/(x2-x1);
-      return Math.round(y1+(y2-y1)*t);
-    }
-  }
-  return 100;
+function drawLandmarks(lm){
+  const w=canvas.width=testImage.clientWidth*devicePixelRatio, h=canvas.height=testImage.clientHeight*devicePixelRatio;
+  canvas.style.width=testImage.clientWidth+"px"; canvas.style.height=testImage.clientHeight+"px";
+  ctx.clearRect(0,0,w,h); if(!toggle.checked||!lm)return;
+  ctx.fillStyle="#ffd76b";
+  for(let i=0;i<lm.length;i+=2){ctx.beginPath();ctx.arc(lm[i].x*w, lm[i].y*h, 1.6*devicePixelRatio,0,Math.PI*2);ctx.fill()}
 }
-function ratioSimilarity(a,b){let dif=0;for(let i=0;i<a.length;i++){dif+=Math.min(Math.abs(a[i]-b[i])*2.8,1);}return clamp(100*(1-dif/a.length));}
+function loadImage(img,src){return new Promise((res,rej)=>{img.onload=()=>res(img);img.onerror=rej;img.src=src})}
 
-function computeFaceScores(a,b){
-  const A=featureVector(a),B=featureVector(b);
-  const shape=similarity(A.contour,B.contour)*.72 + ratioSimilarity(A.ratios.slice(0,1),B.ratios.slice(0,1))*.28;
-  const eyes=similarity(A.eyes,B.eyes)*.82 + ratioSimilarity(A.ratios.slice(1,2),B.ratios.slice(1,2))*.18;
-  const nose=similarity(A.nose,B.nose)*.8 + ratioSimilarity(A.ratios.slice(2,4),B.ratios.slice(2,4))*.2;
-  const mouth=similarity(A.mouth,B.mouth)*.75 + ratioSimilarity(A.ratios.slice(4),B.ratios.slice(4))*.25;
-  const asym=clamp(100-Math.abs(A.asymmetry-B.asymmetry)*110);
-  const face=shape*.22+eyes*.28+nose*.18+mouth*.18+asym*.14;
-  return {shape,eyes,nose,mouth,face:clamp(face)};
+async function getFaceLandmarks(img){
+  // MediaPipe Tasks is optional. If CDN/model is unavailable, return null rather than hanging.
+  try{
+    const mod=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm");
+    const vision=await mod.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm");
+    const detector=await mod.FaceLandmarker.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},
+      runningMode:"IMAGE",numFaces:2
+    });
+    const r=detector.detect(img);
+    detector.close?.();
+    if(!r.faceLandmarks?.length)return null;
+    return r.faceLandmarks[0];
+  }catch(e){console.warn("Face AI unavailable:",e);return null}
 }
-
-function drawLandmarks(canvas,img,lm,visible=true){
-  const ctx=canvas.getContext('2d');
-  canvas.width=img.naturalWidth||img.width; canvas.height=img.naturalHeight||img.height;
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  if(!visible||!lm)return;
-  ctx.lineWidth=Math.max(1,canvas.width/700); ctx.strokeStyle='rgba(255,218,104,.45)'; ctx.fillStyle='rgba(255,75,159,.8)';
-  const groups=[contourIdx,eyeLIdx,eyeRIdx,noseIdx,mouthIdx,browIdx];
-  groups.forEach((group,gi)=>{
-    ctx.beginPath(); group.forEach((i,k)=>{const p=lm[i];const x=p.x*canvas.width,y=p.y*canvas.height;k?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
-    group.forEach(i=>{const p=lm[i];ctx.beginPath();ctx.arc(p.x*canvas.width,p.y*canvas.height,Math.max(1.4,canvas.width/430),0,Math.PI*2);ctx.fill();});
-  });
+function normalizedSimilarity(a,b){
+  if(!a||!b||a.length!==b.length)return null;
+  const ids=[33,263,1,61,291,152,10,234,454];
+  const get=(arr,i)=>arr[i]||arr[0];
+  const le=get(a,33),re=get(a,263), le2=get(b,33),re2=get(b,263);
+  const ax=(le.x+re.x)/2, ay=(le.y+re.y)/2, bx=(le2.x+re2.x)/2, by=(le2.y+re2.y)/2;
+  const scaleA=Math.hypot(le.x-re.x,le.y-re.y)||1, scaleB=Math.hypot(le2.x-re2.x,le2.y-re2.y)||1;
+  let sum=0,n=0;
+  for(const i of ids){const p=get(a,i),q=get(b,i);const dx=(p.x-ax)/scaleA-(q.x-bx)/scaleB;const dy=(p.y-ay)/scaleA-(q.y-by)/scaleB;sum+=Math.hypot(dx,dy);n++}
+  const d=sum/n;
+  return Math.max(0,Math.min(100,100*Math.exp(-d*4.4)));
 }
-function resizeCanvasToImage(canvas,img){canvas.style.aspectRatio=`${img.naturalWidth}/${img.naturalHeight}`;canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;}
-
 function estimateExposure(img){
-  // Game-only heuristic: estimate visible body/skin-like pixels locally in the browser.
-  // The result is a percentage for display; final scoring compares it with the target image's rate.
-  const maxSide=420, scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
-  const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
-  const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,0,w,h);
-  const data=ctx.getImageData(0,0,w,h).data; let skin=0,personish=0;
-  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-    const i=(y*w+x)*4,r=data[i],g=data[i+1],b=data[i+2];
-    const mx=Math.max(r,g,b),mn=Math.min(r,g,b),sat=mx-mn;
-    const looksSkin=r>85 && g>45 && b>35 && r>g*1.08 && g>b*1.02 && sat>18 && r-g<105;
-    const nonDark=mx>45;
-    if(looksSkin)skin++; if(nonDark)personish++;
+  // Conservative, non-sensitive visual-area proxy. It never infers hidden body parts.
+  const c=document.createElement("canvas"), w=120,h=Math.max(80,Math.round(120*img.naturalHeight/img.naturalWidth));
+  c.width=w;c.height=h;const x=c.getContext("2d");x.drawImage(img,0,0,w,h);
+  const d=x.getImageData(0,0,w,h).data; let skin=0,total=0;
+  for(let i=0;i<d.length;i+=4){const r=d[i],g=d[i+1],b=d[i+2]; const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+    const skinish=r>65&&g>35&&b>20&&r>g*1.12&&g>b*1.08&&(mx-mn)>20;
+    if(skinish)skin++;total++;
   }
-  const raw=skin/Math.max(personish,1);
-  return clamp(Math.round(Math.pow(clamp((raw-0.04)/0.30,0,1),0.78)*100),0,100);
+  // Normalize to a game-friendly 0..100 visual exposure rate.
+  return Math.round(Math.max(0,Math.min(100,(skin/total)*260)));
 }
-
-function setAnalysis(title,text,pct){els.analysisTitle.textContent=title;els.analysisText.textContent=text;els.progressBar.style.width=`${pct}%`;}
-function toast(msg){els.toast.textContent=msg;els.toast.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>els.toast.classList.remove('show'),2200);}
-function sparks(score){const count=score>=95?42:score>=85?24:score>=70?12:4;for(let i=0;i<count;i++){const s=document.createElement('div');s.className='spark '+(i%3===0?'star':'');s.style.left=(30+Math.random()*40)+'%';s.style.top=(20+Math.random()*45)+'%';s.style.setProperty('--dx',(Math.random()*260-130)+'px');s.style.setProperty('--dy',(Math.random()*-250-40)+'px');els.sparkLayer.appendChild(s);setTimeout(()=>s.remove(),1400)}}
-function verdict(score){
-  if(score>=95)return ['この世界が丸い球体で出来ていると初めて気づいた人はこの銀河でさえも球体で構成された円で出来ていることに気づいていたのだろうか。この世はこんなにも円で構成されているのに円だけが数学ではっきりした他を持たない。自分自身が原子で構成されているのにもかかわらず自分自身を求めることはできないのだ。',''];
-  if(score>=90)return ['んっ…',''];
-  if(score>=80)return ['ごっつええなぁ',''];
-  if(score>=70)return ['ふう',''];
-  if(score>=60)return ['まあ、いけるべ',''];
-  if(score>=50)return ['今日は仕方なし、これでいいや',''];
-  if(score>=40)return ['いまいちやな',''];
-  return ['まだまだやな',''];
-}
-
-async function initFaceMesh(){
-  if(typeof FaceMesh==='undefined')throw new Error('MediaPipe Face Mesh が読み込めませんでした。');
-  faceMesh=new FaceMesh({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`});
-  faceMesh.setOptions({maxNumFaces:2,refineLandmarks:true,minDetectionConfidence:.55,minTrackingConfidence:.55});
-  // Do not send a dummy canvas here. Some Safari/iOS WebGL setups can reject it.
-  // The first real image is used to warm up the model instead.
-}
-
-async function detect(img, retries=2){
-  if(!faceMesh) throw new Error('AIモデルが準備できていません。');
-  let lastError=null;
-  for(let attempt=0;attempt<=retries;attempt++){
-    try{
-      const result=await new Promise((resolve,reject)=>{
-        let done=false;
-        const timer=setTimeout(()=>{
-          if(!done){done=true;reject(new Error('AI解析がタイムアウトしました。'));}
-        },12000);
-        faceMesh.onResults((res)=>{
-          if(done)return;
-          done=true;clearTimeout(timer);resolve(res);
-        });
-        Promise.resolve(faceMesh.send({image:img})).catch(err=>{
-          if(done)return;
-          done=true;clearTimeout(timer);reject(err);
-        });
-      });
-      return result && result.multiFaceLandmarks ? result.multiFaceLandmarks : [];
-    }catch(err){
-      lastError=err;
-      if(attempt<retries) await wait(500);
-    }
-  }
-  throw lastError || new Error('AI解析に失敗しました。');
-}
-
-async function loadTarget(){
+async function setTarget(){
   try{
-    setAnalysis('AIモデル起動中……','顔面測定器の電源を入れています。',15);
-    await initFaceMesh();
-    setAnalysis('TARGET FACEをスキャン中……','基準顔のランドマークを取得しています。',35);
-    const faces=await detect(els.targetImage);
-    if(faces.length!==1)throw new Error(faces.length===0?'基準顔が見つかりませんでした。':'基準画像に複数の顔があります。');
-    targetLandmarks=faces[0];targetExposureRate=Math.max(1,estimateExposure(els.targetImage));targetImageReady=true;resizeCanvasToImage(els.targetCanvas,els.targetImage);drawLandmarks(els.targetCanvas,els.targetImage,targetLandmarks,showTargetLandmarks);
-    setAnalysis('TARGET LOCKED.','基準顔を100点の比較基準としてロックしました。',100);
-    els.fileStatus.textContent='READY';els.fileStatus.classList.add('ready');
-  }catch(err){setAnalysis('測定器、準備中……','AI測定器の準備を続けています。しばらくしてもう一度画像を投入してください。',0);}
+    const img=new Image(); img.src="target.png"; await img.decode();
+    targetLandmarks=await getFaceLandmarks(img);
+    // Requested reference exposure: 25%.
+  }catch(e){targetLandmarks=null}
 }
-
-async function processTest(file){
-  if(!targetImageReady){toast('基準顔のAI解析がまだ終わっていません。');return;}
-  const ok=/^image\/(jpeg|png|webp)$/.test(file.type)||/\.(jpe?g|png|webp)$/i.test(file.name);
-  if(!ok){toast('その画像形式は測定器が対応していません！');return;}
-  if(file.size>15*1024*1024){toast('画像が大きすぎます。15MB以下にしてください。');return;}
-  if(testObjectUrl)URL.revokeObjectURL(testObjectUrl);testObjectUrl=URL.createObjectURL(file);
-  els.testImage.src=testObjectUrl;els.testPreview.classList.remove('hidden');els.dropZone.classList.add('hidden');els.fileStatus.textContent='SCANNING';
-  await new Promise((resolve,reject)=>{els.testImage.onload=resolve;els.testImage.onerror=reject});
+async function measure(file){
+  if(busy)return; busy=true;
+  setStatus("測定器、計測開始。");
+  note.textContent="顔の特徴を解析中……";
   try{
-    setAnalysis('顔面解析中……','目の位置を確認しています……',25);await wait(350);
-    const faces=await detect(els.testImage);
-    if(faces.length===0)throw new Error('顔が見つかりませんでした！顔面をもう少し大きくしてください。');
-    if(faces.length>1)throw new Error('顔面を1人にしてください！測定器は2人同時に処理できません。');
-    testLandmarks=faces[0];resizeCanvasToImage(els.testCanvas,els.testImage);drawLandmarks(els.testCanvas,els.testImage,testLandmarks,showTestLandmarks);
-    setAnalysis('特徴量を比較中……','基準顔との距離を計算しています……',55);await wait(350);
-    const scores=computeFaceScores(targetLandmarks,testLandmarks);
-    setAnalysis('全体の好み度を計算中……','顔と画像全体の特徴をまとめています……',75);await wait(350);
-    const exposureRate=estimateExposure(els.testImage);
-    // 顔75% + 露出率25%で100点満点に統合。基準画像の露出率を25点相当(100%)として正規化。
-    const exposureMatch=clamp(Math.round((exposureRate/targetExposureRate)*100));
-    const rawTotal=clamp(scores.face*.75+exposureMatch*.25,0,100);
-    const total=strictScore(rawTotal);
-    showResult(scores,exposureRate,total,rawTotal);
-  }catch(err){
-    console.warn('Face analysis did not complete:', err);
-    setAnalysis('測定器、待機中。','画像をもう一度投入すると再測定します。',100);
-    els.fileStatus.textContent='READY';
-  }
+    if(!file||!/^image\/(jpeg|png|webp)$/.test(file.type)){throw new Error("format")}
+    if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl=URL.createObjectURL(file);
+    await loadImage(testImage,currentObjectUrl);
+    result.hidden=false;
+    const lm=await Promise.race([getFaceLandmarks(testImage),new Promise(r=>setTimeout(()=>r(null),12000))]);
+    window.lastLandmarks=lm; drawLandmarks(lm);
+    const exp=estimateExposure(testImage);
+    exposureEl.textContent=exp+"%"; exposureBar.style.width=exp+"%";
+    let faceSim=lm&&targetLandmarks?normalizedSimilarity(lm,targetLandmarks):72;
+    // Exposure is part of the overall score, not a separate bonus.
+    let raw=faceSim==null?Math.max(35,72*0.75+exp*0.25):(faceSim*0.75+exp*0.25);
+    // Keep reference-like exposure from dominating while still visibly affecting the game.
+    raw=Math.max(0,Math.min(100,raw));
+    const s=strictScore(raw);
+    scoreEl.textContent=s; commentEl.textContent=commentFor(s);
+    bgFor(s); meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,s/100)})`;
+    meter.classList.toggle("hot",s>=70);
+    note.textContent=lm?"測定完了。謎の測定器が結論を出しました。":"測定完了。AIの一部が休憩中ですが、ゲームは続行します。";
+    setStatus("測定完了！");
+  }catch(e){
+    console.warn(e);
+    // Never strand the UI in a retry state.
+    result.hidden=false; scoreEl.textContent="--"; commentEl.textContent="写真をもう一度投入してみて。";
+    note.textContent="測定器は待機中です。";
+    setStatus("測定器、待機中。");
+  }finally{busy=false}
 }
-function showResult(scores,exposureRate,total,rawTotal){
-  els.faceScore.textContent='';
-  els.exposureScore.textContent=exposureRate;
-  els.totalScore.textContent=total;
-  els.shapeScore.textContent=Math.round(scores.shape)+'%';els.eyeScore.textContent=Math.round(scores.eyes)+'%';els.noseScore.textContent=Math.round(scores.nose)+'%';els.mouthScore.textContent=Math.round(scores.mouth)+'%';
-  const [v,sub]=verdict(total);els.verdict.textContent=v;
-  els.resultSection.classList.remove('hidden');els.controls.classList.remove('hidden');
-  document.body.classList.toggle('high',total>=80);
-  els.meterBar.style.height=`${Math.max(3,total)}%`;
-  els.meterRank.textContent=total>=95?'ULTRA RARE':total>=85?'GOLD':total>=70?'HOT':'NORMAL';
-  els.meterCaption.textContent=v;
-  els.meterFlare.classList.toggle('active',total>=80);
-  els.meterDevice.classList.toggle('balls-lit',total>=70);
-  setAnalysis('測定完了！！',v,100);
-  setTimeout(()=>els.resultSection.scrollIntoView({behavior:'smooth',block:'start'}),150);
-  if(total>=70)sparks(total);
-}
+chooseBtn.onclick=()=>fileInput.click();
+dropZone.addEventListener("click",e=>{if(e.target!==chooseBtn)fileInput.click()});
+fileInput.addEventListener("change",()=>fileInput.files[0]&&measure(fileInput.files[0]));
+["dragenter","dragover"].forEach(e=>dropZone.addEventListener(e,x=>{x.preventDefault();dropZone.classList.add("over")}));
+["dragleave","drop"].forEach(e=>dropZone.addEventListener(e,x=>{x.preventDefault();dropZone.classList.remove("over")}));
+dropZone.addEventListener("drop",e=>{const f=e.dataTransfer.files[0];if(f)measure(f)});
+toggle.addEventListener("change",()=>drawLandmarks(window.lastLandmarks||null));
+again.onclick=()=>{result.hidden=true;fileInput.value="";setStatus("測定器、待機中。");window.scrollTo({top:0,behavior:"smooth"})};
 
-function reset(){
-  if(testObjectUrl)URL.revokeObjectURL(testObjectUrl);testObjectUrl=null;testLandmarks=null;els.testImage.removeAttribute('src');els.testPreview.classList.add('hidden');els.dropZone.classList.remove('hidden');els.fileInput.value='';els.resultSection.classList.add('hidden');els.controls.classList.add('hidden');els.fileStatus.textContent='WAITING';els.faceScore.textContent='--';els.totalScore.textContent='--';els.exposureScore.textContent='0';els.meterBar.style.height='0';els.meterFlare.classList.remove('active');els.meterDevice.classList.remove('balls-lit');document.body.classList.remove('high');setAnalysis('測定器、待機中。','比較画像を投入すると顔面スキャンを開始します。',100);window.scrollTo({top:0,behavior:'smooth'});}
-
-els.chooseBtn.addEventListener('click',(e)=>{e.preventDefault();els.fileInput.click()});els.fileInput.addEventListener('change',e=>{if(e.target.files[0])processTest(e.target.files[0])});
-['dragenter','dragover'].forEach(ev=>els.dropZone.addEventListener(ev,e=>{e.preventDefault();els.dropZone.classList.add('drag')}));['dragleave','drop'].forEach(ev=>els.dropZone.addEventListener(ev,e=>{e.preventDefault();els.dropZone.classList.remove('drag')}));els.dropZone.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)processTest(f)});
-els.resetBtn.addEventListener('click',reset);
-els.landmarkToggle.addEventListener('click',()=>{showTestLandmarks=!showTestLandmarks;els.landmarkToggle.textContent=showTestLandmarks?'ON':'OFF';els.landmarkToggle.classList.toggle('on',showTestLandmarks);if(testLandmarks)drawLandmarks(els.testCanvas,els.testImage,testLandmarks,showTestLandmarks)});
-
-window.addEventListener('error',e=>{if(/FaceMesh|face_mesh|mediapipe/i.test(e.message||''))toast('AIライブラリの読み込みに失敗しました。');});
-if(els.targetImage.complete)loadTarget();else els.targetImage.addEventListener('load',loadTarget,{once:true});
+window.addEventListener("resize",()=>{if(window.lastLandmarks)drawLandmarks(window.lastLandmarks)});
+setTarget();
