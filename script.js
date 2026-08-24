@@ -67,28 +67,94 @@ async function measure(file){
   img.onload=()=>drawLM(lastLM);img.src=objectURL;await img.decode();result.hidden=false;
   const arr=await Promise.race([faceAI(img),new Promise(r=>setTimeout(()=>r([]),12000))]);
   if(arr.length>1){note.textContent="顔が複数見つかりました。1人で投入してね。";statusEl.textContent="測定器、待機中。";busy=false;return}
-  lastLM=arr[0]||null;drawLM(lastLM);
-  const ex=exposure(img);exposureEl.textContent=ex+"%";exposureBar.style.width=ex+"%";
-  let face=targetSignature&&lastLM?similarity(signature(lastLM),targetSignature):null;
-  // Robust fallback: if AI is unavailable, do not pretend the result is an exact identity match.
-  if(face==null)face=55;
-  // Exposure is integrated into the 100-point total; reference exposure is 25%.
-  const expContribution=Math.max(0,Math.min(100,100-Math.abs(ex-25)*1.15));
-  const raw=face*.78+expContribution*.22;
-  const finalScore=strictScore(raw);
-  scoreEl.textContent=finalScore;commentEl.textContent=commentFor(finalScore);
-  bg(finalScore);meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,finalScore/100)})`;meter.classList.toggle("hot",finalScore>=70);
-  note.textContent=targetSignature?"測定完了。顔の特徴を比較しました。":"測定完了。基準AIの準備が不十分なため暫定比較です。";
-  statusEl.textContent="測定完了！";
+lastLM=arr[0]||null;drawLM(lastLM);
+const ex=exposure(img);exposureEl.textContent=ex+"%";exposureBar.style.width=ex+"%";
+let face=targetSignature&&lastLM?similarity(signature(lastLM),targetSignature):null;
+
+if(face==null){
+  note.textContent="先に基準写真を設定してください。";
+  statusEl.textContent="測定器、待機中。";
+  busy=false;
+  return;
+}
+
+const raw=face;
+const finalScore=strictScore(raw);
+scoreEl.textContent=finalScore;commentEl.textContent=commentFor(finalScore);
+bg(finalScore);meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,finalScore/100)})`;meter.classList.toggle("hot",finalScore>=70);
+note.textContent=targetSignature
+  ?"測定完了。顔の特徴を比較しました。"
+  :"基準写真を設定してください。";
+statusEl.textContent="測定完了！";
  }catch(e){console.warn(e);result.hidden=false;scoreEl.textContent="--";commentEl.textContent="写真をもう一度投入してみて。";note.textContent="測定器、待機中。";statusEl.textContent="測定器、待機中。"}
  finally{busy=false}
 }
-chooseBtn.onclick=e=>{e.stopPropagation();fileInput.click()};
-dropZone.onclick=e=>{if(e.target!==chooseBtn)fileInput.click()};
-fileInput.onchange=()=>fileInput.files[0]&&measure(fileInput.files[0]);
+targetBtn.onclick=e=>{
+ e.stopPropagation();
+ targetInput.click();
+};
+
+chooseBtn.onclick=e=>{
+ e.stopPropagation();
+ fileInput.click();
+};
+
+targetInput.onchange=async()=>{
+ const f=targetInput.files[0];
+ if(!f)return;
+
+ try{
+  const t=new Image();
+  t.src=URL.createObjectURL(f);
+  await t.decode();
+
+  const arr=await Promise.race([
+   faceAI(t),
+   new Promise(r=>setTimeout(()=>r([]),12000))
+  ]);
+
+  if(arr.length!==1){
+   targetStatus.textContent=arr.length>1
+    ?"基準写真：顔が複数あります"
+    :"基準写真：顔を検出できませんでした";
+   return;
+  }
+
+  targetLM=arr[0];
+  targetSignature=signature(targetLM);
+
+  targetStatus.textContent="基準写真：設定完了（100点基準）";
+  statusEl.textContent="基準写真を登録しました。比較写真を投入してください。";
+
+  URL.revokeObjectURL(t.src);
+ }catch(e){
+  console.warn("Target setup failed",e);
+  targetStatus.textContent="基準写真：読み込み失敗";
+ }
+};
+
+fileInput.onchange=()=>{
+ const f=fileInput.files[0];
+ if(f)measure(f);
+};
+
 dropZone.ondragover=e=>e.preventDefault();
-dropZone.ondrop=e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)measure(f)};
+
+dropZone.ondrop=e=>{
+ e.preventDefault();
+ const f=e.dataTransfer.files[0];
+ if(f)measure(f);
+};
+
 toggle.onchange=()=>drawLM(lastLM);
-again.onclick=()=>{result.hidden=true;fileInput.value="";statusEl.textContent="測定器、待機中。";window.scrollTo({top:0,behavior:"smooth"})};
+
+again.onclick=()=>{
+ result.hidden=true;
+ fileInput.value="";
+ statusEl.textContent=targetSignature
+  ?"基準写真を設定済み。比較写真を投入してください。"
+  :"測定器、待機中。";
+ window.scrollTo({top:0,behavior:"smooth"});
+};
+
 window.onresize=()=>drawLM(lastLM);
-loadTarget();
