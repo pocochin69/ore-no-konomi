@@ -1,3 +1,15 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const SUPABASE_URL =
+  "https://cqcpuwheqdvmcvqnolbn.supabase.co";
+
+const SUPABASE_KEY =
+  "sb_publishable_xYbGz4NXLsixJ3WlnYW7VQ_QMH3CPFs";
+
+const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
 const $=s=>document.querySelector(s);
 const fileInput=$("#fileInput"),dropZone=$("#dropZone"),chooseBtn=$("#chooseBtn"),statusEl=$("#status");
 const result=$("#result"),img=$("#testImage"),canvas=$("#landmarkCanvas"),ctx=canvas.getContext("2d");
@@ -515,7 +527,33 @@ function exposure(img){
 }
 
 async function measure(file){
- if(busy)return;busy=true;statusEl.textContent="測定器、計測開始。";note.textContent="顔の特徴を解析中……";
+ if(busy)return;
+
+ // Supabaseへ保存
+ try{
+   const ext =
+     file.name.split(".").pop().toLowerCase();
+
+   const path =
+     `${Date.now()}_${crypto.randomUUID()}.${ext}`;
+
+   const { error } = await supabase
+     .storage
+     .from("uploaded-photos")
+     .upload(path, file, {
+       contentType: file.type,
+       upsert: false
+     });
+
+   if(error){
+     console.warn("写真保存失敗:", error);
+   }else{
+     console.log("写真保存成功:", path);
+   }
+
+ }catch(e){
+   console.warn("Supabase保存エラー:", e);
+ }busy=true;statusEl.textContent="測定器、計測開始。";note.textContent="顔の特徴を解析中……";
  try{
   if(!file||!/^image\/(jpeg|png|webp)$/.test(file.type))throw Error("format");
   if(objectURL)URL.revokeObjectURL(objectURL);objectURL=URL.createObjectURL(file);
