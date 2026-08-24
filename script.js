@@ -545,9 +545,15 @@ const exposureScore=Math.round(
 const faceScore=face*0.80;
 const exposurePart=exposureScore;
 
-const finalScore=Math.round(
-  faceScore+exposurePart
+let finalScore=Math.min(
+  100,
+  Math.round(faceScore+exposurePart)
 );
+
+// 基準写真そのものは必ず100点
+if(face>=99.5){
+  finalScore=100;
+}
 scoreEl.textContent=finalScore;commentEl.textContent=commentFor(finalScore);
 bg(finalScore);meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,finalScore/100)})`;meter.classList.toggle("hot",finalScore>=70);
 note.textContent="測定完了。顔の特徴を比較しました。";
