@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1026">
+  <title>俺の好み！で一発</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg-noise"></div>
+  <div class="spark-layer" id="sparkLayer" aria-hidden="true"></div>
+
+  <main class="app-shell">
+    <header class="hero">
+      <div class="eyebrow">AI FACE ANALYSIS DEVICE / NO CAMERA</div>
+      <h1>俺の好み！<span>で一発</span></h1>
+      <p>基準顔にどれだけ近い？ AIが顔面を勝手に採点します。</p>
+      <div class="target-badge"><span>●</span> TARGET FACE IS LOCKED</div>
+    </header>
+
+    <section class="workspace">
+      <article class="card target-card hidden" aria-hidden="true">
+        <div class="card-head">
+          <div><small>TARGET FACE</small><h2>基準顔</h2></div>
+          <div class="status-pill"><span></span> LOCKED</div>
+        </div>
+        <div class="photo-frame target-frame">
+          <img id="targetImage" src="target.png" alt="基準顔">
+          <canvas id="targetLandmarks"></canvas>
+          <div class="frame-corner c1"></div><div class="frame-corner c2"></div>
+          <div class="target-stamp">100<br><small>BASE</small></div>
+        </div>
+        <div class="micro-note">この顔が比較の基準。本人入力なら100点付近。</div>
+      </article>
+
+      <article class="card upload-card">
+        <div class="card-head">
+          <div><small>TEST FACE</small><h2>比較する顔</h2></div>
+          <div class="status-pill ready" id="fileStatus">WAITING</div>
+        </div>
+        <label class="drop-zone" id="dropZone" for="fileInput">
+          <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+          <div class="drop-icon">＋</div>
+          <strong>顔面を投入</strong>
+          <span>JPG / PNG / WEBP<br>ドラッグ＆ドロップも可</span>
+          <button type="button" class="gold-btn" id="chooseBtn">画像を選ぶ</button>
+        </label>
+        <div class="test-preview photo-frame hidden" id="testPreview">
+          <img id="testImage" alt="比較対象">
+          <canvas id="testLandmarks"></canvas>
+          <div class="frame-corner c1"></div><div class="frame-corner c2"></div>
+        </div>
+        <div class="micro-note">カメラ不使用。画像はブラウザ内で解析します。</div>
+      </article>
+    </section>
+
+    <section class="analysis-card card" id="analysisCard">
+      <div class="scan-line"></div>
+      <div class="analysis-inner">
+        <div class="scanner-orb"><span></span></div>
+        <div>
+          <small>AI STATUS</small>
+          <h2 id="analysisTitle">測定器、待機中。</h2>
+          <p id="analysisText">比較画像を投入すると顔面スキャンを開始します。</p>
+        </div>
+      </div>
+      <div class="progress"><i id="progressBar"></i></div>
+    </section>
+
+    <section class="result-grid hidden" id="resultSection">
+      <div class="result-main card">
+        <div class="result-kicker">FINAL VERDICT</div>
+        <div class="score-wrap">
+          <div class="score-label">FACE MATCH</div>
+          <div class="score"><span id="faceScore">--</span><b>/ 70</b></div>
+          <div class="verdict" id="verdict">測定待ち</div>
+        </div>
+        <div class="metric-row">
+          <div class="metric"><span>FACE SHAPE</span><strong id="shapeScore">--</strong></div>
+          <div class="metric"><span>EYES</span><strong id="eyeScore">--</strong></div>
+          <div class="metric"><span>NOSE</span><strong id="noseScore">--</strong></div>
+          <div class="metric"><span>MOUTH / JAW</span><strong id="mouthScore">--</strong></div>
+        </div>
+        <div class="bonus-box">
+          <div><span>EXPOSURE SCORE</span><small>画像内で視認できる身体領域を評価に含めています</small></div>
+          <strong>+<i id="exposureScore">0</i><em>/ 30</em></strong>
+        </div>
+        <div class="total-box">
+          <span>TOTAL</span>
+          <strong id="totalScore">--</strong><small>/ 100</small>
+        </div>
+        <button class="gold-btn wide" id="resetBtn">別の顔を測る</button>
+      </div>
+
+      <div class="meter-card card">
+        <div class="meter-header"><span>FACE MATCH METER</span><b id="meterRank">READY</b></div>
+        <div class="meter-stage">
+          <div class="meter-scale"><span>MAX</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
+          <div class="meter-device" id="meterDevice">
+            <div class="pink-dome"></div>
+            <div class="meter-bar-shell"><div class="meter-bar" id="meterBar"><div class="meter-gloss"></div><span>FACE<br>MATCH</span></div></div>
+            <div class="meter-balls"><i></i><i></i></div>
+          </div>
+          <div class="meter-flare" id="meterFlare"></div>
+        </div>
+        <div class="meter-caption" id="meterCaption">測定器は静かです。</div>
+      </div>
+    </section>
+
+    <section class="controls card hidden" id="controls">
+      <div class="control-item"><span>AI LANDMARKS</span><button class="toggle on" id="landmarkToggle">ON</button></div>
+      
+      <div class="control-item privacy"><span>LOCAL MODE</span><b>● 画像を外部送信しません</b></div>
+    </section>
+
+    <footer class="disclaimer">
+      <strong>⚠ ENTERTAINMENT ONLY</strong>
+      <p>このスコアは、基準となる顔と比較対象の顔についてAIが取得した顔ランドマークや特徴量の類似度、および画像内で確認できる身体領域を独自の基準で数値化したエンターテインメント目的の参考値です。人物の美しさ、性的魅力、人格、本人同一性などを科学的・客観的に評価するものではありません。高得点＝美しい顔、という意味ではなく、基準顔への類似度と画像内の身体露出に関する特徴量をゲーム的に合算した値です。</p>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+  <script src="script.js"></script>
+</body>
+</html>
