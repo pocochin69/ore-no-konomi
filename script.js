@@ -28,13 +28,31 @@ function drawLM(lm){
 
  if(!toggle.checked||!lm)return;
 
+ // imgの実際の表示領域（object-fit: contain）を計算
+ const iw=img.naturalWidth;
+ const ih=img.naturalHeight;
+ const cw=img.clientWidth;
+ const ch=img.clientHeight;
+
+ const scale=Math.min(cw/iw,ch/ih);
+
+ const dw=iw*scale;
+ const dh=ih*scale;
+
+ const offsetX=(cw-dw)/2;
+ const offsetY=(ch-dh)/2;
+
+ // 全顔ランドマーク
  ctx.fillStyle="#ffe080";
 
  for(const p of lm){
+  const x=(offsetX+p.x*dw)*devicePixelRatio;
+  const y=(offsetY+p.y*dh)*devicePixelRatio;
+
   ctx.beginPath();
   ctx.arc(
-   p.x*canvas.width,
-   p.y*canvas.height,
+   x,
+   y,
    1.5*devicePixelRatio,
    0,
    Math.PI*2
@@ -43,22 +61,29 @@ function drawLM(lm){
  }
 
  // 左目
- const leftEye=[33,133,159,145,160,161,158,144,153,154,155];
+ const leftEye=[
+  33,133,159,145,160,161,158,144,153,154,155
+ ];
 
  // 右目
- const rightEye=[362,263,386,374,387,388,385,373,380,381,382];
+ const rightEye=[
+  362,263,386,374,387,388,385,373,380,381,382
+ ];
 
- // 目のランドマークを大きく表示
+ // 目を見やすく表示
  ctx.fillStyle="#00ffff";
 
  for(const i of [...leftEye,...rightEye]){
   const p=lm[i];
   if(!p)continue;
 
+  const x=(offsetX+p.x*dw)*devicePixelRatio;
+  const y=(offsetY+p.y*dh)*devicePixelRatio;
+
   ctx.beginPath();
   ctx.arc(
-   p.x*canvas.width,
-   p.y*canvas.height,
+   x,
+   y,
    4*devicePixelRatio,
    0,
    Math.PI*2
@@ -66,12 +91,39 @@ function drawLM(lm){
   ctx.fill();
  }
 }
+async function faceAI(image){
  try{
-  const m=await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm");
-  const fs=await m.FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm");
-  const detector=await m.FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},runningMode:"IMAGE",numFaces:2});
-  const r=detector.detect(image);detector.close?.();return r.faceLandmarks||[];
- }catch(e){console.warn("Face AI unavailable",e);return []}
+  const m=await import(
+   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/+esm"
+  );
+
+  const fs=await m.FilesetResolver.forVisionTasks(
+   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm"
+  );
+
+  const detector=await m.FaceLandmarker.createFromOptions(
+   fs,
+   {
+    baseOptions:{
+     modelAssetPath:
+      "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+     delegate:"GPU"
+    },
+    runningMode:"IMAGE",
+    numFaces:2
+   }
+  );
+
+  const r=detector.detect(image);
+
+  detector.close?.();
+
+  return r.faceLandmarks||[];
+
+ }catch(e){
+  console.warn("Face AI unavailable",e);
+  return [];
+ }
 }
 function centerScale(lm){
  const L=lm[33]||lm[1],R=lm[263]||lm[1],N=lm[1]||lm[0];
