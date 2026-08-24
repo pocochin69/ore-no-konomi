@@ -40,10 +40,23 @@ function signature(lm){
 }
 function similarity(a,b){
  if(!a||!b||a.length!==b.length)return null;
- let d=0;for(let i=0;i<a.length;i++){const dx=a[i][0]-b[i][0],dy=a[i][1]-b[i][1],dz=a[i][2]-b[i][2];d+=Math.sqrt(dx*dx+dy*dy+dz*dz)}
+
+ let d=0;
+
+ for(let i=0;i<a.length;i++){
+  const dx=a[i][0]-b[i][0];
+  const dy=a[i][1]-b[i][1];
+  const dz=a[i][2]-b[i][2];
+
+  d+=Math.sqrt(dx*dx+dy*dy+dz*dz);
+ }
+
  d/=a.length;
- // Same normalized landmark shape maps very close to 100.
- return Math.max(0,Math.min(100,100*Math.exp(-d*6.0)))
+
+ // 正規化後の顔形状の差を100点換算
+ const score=100*Math.exp(-d*2.2);
+
+ return Math.max(0,Math.min(100,score));
 }
 function exposure(img){
  // Visual skin-area proxy, excluding the central face area so the face itself does not inflate exposure.
@@ -77,7 +90,12 @@ if(face==null){
   busy=false;
   return;
 }
-const raw=face;
+const expContribution=Math.max(
+  0,
+  Math.min(100,100-Math.abs(ex-25)*1.15)
+);
+
+const raw=face*0.78+expContribution*0.22;
 const finalScore=strictScore(raw);
 scoreEl.textContent=finalScore;commentEl.textContent=commentFor(finalScore);
 bg(finalScore);meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,finalScore/100)})`;meter.classList.toggle("hot",finalScore>=70);
