@@ -449,13 +449,7 @@ function exposure(img){
  for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){const nx=(xx/w-.5)*2,ny=(y/h-.43)*2;if(nx*nx/0.18+ny*ny/0.28<1)continue;const k=(y*w+xx)*4,r=d[k],g=d[k+1],b=d[k+2];if(r>65&&r>g*1.1&&g>b*1.05&&r-g>12)s++;t++}
  return Math.round(Math.max(0,Math.min(100,s/t*280)))
 }
-async function loadTarget(){
- try{
-  const t=new Image();t.src="target.png";await t.decode();
-  const arr=await Promise.race([faceAI(t),new Promise(r=>setTimeout(()=>r([]),12000))]);
-  if(arr.length===1){targetLM=arr[0];targetSignature=signature(targetLM)}
- }catch(e){console.warn("Target load failed",e)}
-}
+
 async function measure(file){
  if(busy)return;busy=true;statusEl.textContent="測定器、計測開始。";note.textContent="顔の特徴を解析中……";
  try{
@@ -474,13 +468,19 @@ if(face==null){
   busy=false;
   return;
 }
-const expContribution=Math.max(
+const exposureDifference=Math.abs(ex-targetExposure);
+
+const exposureScore=Math.max(
   0,
-  Math.min(100,100-Math.abs(ex-25)*1.15)
+  27-exposureDifference*1.5
 );
 
-const raw=face*0.90+expContribution*0.10;
-const finalScore=Math.round(raw);
+const faceScore=face*0.70;
+const exposurePart=exposureScore;
+
+const finalScore=Math.round(
+  faceScore+exposurePart
+);
 scoreEl.textContent=finalScore;commentEl.textContent=commentFor(finalScore);
 bg(finalScore);meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,finalScore/100)})`;meter.classList.toggle("hot",finalScore>=70);
 note.textContent="測定完了。顔の特徴を比較しました。";
@@ -515,5 +515,29 @@ again.onclick=()=>{
 };
 
 window.onresize=()=>drawLM(lastLM);
+let targetExposure=25;
+async function loadTarget(){
+  try{
+    const t=new Image();
+    t.src="target.png";
+    await t.decode();
 
+    const arr=await Promise.race([
+      faceAI(t),
+      new Promise(r=>setTimeout(()=>r([]),12000))
+    ]);
+
+    if(arr.length===1){
+      targetLM=arr[0];
+      targetSignature=signature(targetLM);
+
+      // 基準写真の露出度を保存
+      targetExposure=exposure(t);
+
+      console.log("基準写真の露出度:",targetExposure);
+    }
+  }catch(e){
+    console.warn("Target load failed",e);
+  }
+}
 loadTarget();
