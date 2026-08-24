@@ -472,13 +472,13 @@ const exposureScore=Math.round(
   Math.max(
     0,
     Math.min(
-      27,
-      ex*27/100
+      20,
+      ex*20/100
     )
   )
 );
 
-const faceScore=face*0.70;
+const faceScore=face*0.80;
 const exposurePart=exposureScore;
 
 const finalScore=Math.round(
