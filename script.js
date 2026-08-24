@@ -443,11 +443,75 @@ function similarity(a,b){
   return raw*0.65;
 }
 function exposure(img){
- // Visual skin-area proxy, excluding the central face area so the face itself does not inflate exposure.
- const c=document.createElement("canvas"),w=140,h=Math.max(100,Math.round(140*img.naturalHeight/img.naturalWidth)),x=c.getContext("2d");c.width=w;c.height=h;x.drawImage(img,0,0,w,h);
- const d=x.getImageData(0,0,w,h).data;let s=0,t=0;
- for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){const nx=(xx/w-.5)*2,ny=(y/h-.43)*2;if(nx*nx/0.18+ny*ny/0.28<1)continue;const k=(y*w+xx)*4,r=d[k],g=d[k+1],b=d[k+2];if(r>65&&r>g*1.1&&g>b*1.05&&r-g>12)s++;t++}
- return Math.round(Math.max(0,Math.min(100,s/t*280)))
+  // 肌色＋色白の肌を検出
+  const c=document.createElement("canvas");
+  const w=140;
+  const h=Math.max(
+    100,
+    Math.round(140*img.naturalHeight/img.naturalWidth)
+  );
+  const x=c.getContext("2d");
+
+  c.width=w;
+  c.height=h;
+
+  x.drawImage(img,0,0,w,h);
+
+  const d=x.getImageData(0,0,w,h).data;
+
+  let s=0;
+  let t=0;
+
+  for(let y=0;y<h;y++){
+    for(let xx=0;xx<w;xx++){
+
+      const nx=(xx/w-.5)*2;
+      const ny=(y/h-.43)*2;
+
+      // 顔の中央は除外
+      if(
+        nx*nx/0.18+
+        ny*ny/0.28<1
+      )continue;
+
+      const k=(y*w+xx)*4;
+
+      const r=d[k];
+      const g=d[k+1];
+      const b=d[k+2];
+
+      // 通常の肌色
+      const normalSkin=
+        r>65 &&
+        r>g*1.05 &&
+        g>b*1.03 &&
+        r-b>15;
+
+      // 色白・白っぽい肌
+      const lightSkin=
+        r>150 &&
+        g>130 &&
+        b>115 &&
+        Math.abs(r-g)<45 &&
+        Math.abs(g-b)<45;
+
+      if(normalSkin||lightSkin){
+        s++;
+      }
+
+      t++;
+    }
+  }
+
+  return Math.round(
+    Math.max(
+      0,
+      Math.min(
+        100,
+        s/t*280
+      )
+    )
+  );
 }
 
 async function measure(file){
