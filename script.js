@@ -16,7 +16,21 @@ const comments=[
  [95,"この世界が丸い球体で出来ていると初めて気づいた人はこの銀河でさえも球体で構成された円で出来ていることに気づいていたのだろうか。この世はこんなにも円で構成されているのに円だけが数学ではっきりした他を持たない。自分自身が原子で構成されているのにもかかわらず自分自身を求めることはできないのだ。"]
 ];
 function commentFor(s){let c="測定完了。";for(const [n,t] of comments)if(s>=n)c=t;return c}
-function strictScore(x){x=Math.max(0,Math.min(100,x));if(x<=70)return Math.round(x*40/70);if(x<=90)return Math.round(40+(x-70)*57/20);return Math.round(97+(x-90)*3/10)}
+function strictScore(x){
+ x=Math.max(0,Math.min(100,x));
+
+ if(x<=70)
+  return Math.round(x*40/70);
+
+ if(x<=90)
+  return Math.round(
+   40+(x-70)*57/20
+  );
+
+ return Math.round(
+   97+(x-90)*3/10
+  );
+}
 function bg(s){const h=220-s*1.7;document.body.style.background=`radial-gradient(circle at 50% -10%,hsl(${h},70%,40%) 0,hsl(${h-18},60%,20%) 40%,#1a0d14 100%)`}
 function drawLM(lm){
  canvas.width=img.clientWidth*devicePixelRatio;
@@ -126,36 +140,139 @@ async function faceAI(image){
  }
 }
 function centerScale(lm){
- const L=lm[33]||lm[1],R=lm[263]||lm[1],N=lm[1]||lm[0];
- const cx=(L.x+R.x)/2,cy=(L.y+R.y)/2;
- const dx=R.x-L.x,dy=R.y-L.y,scale=Math.hypot(dx,dy)||1;
- const ang=Math.atan2(dy,dx),co=Math.cos(-ang),si=Math.sin(-ang);
- return lm.map(p=>{const x=(p.x-cx)/scale,y=(p.y-cy)/scale;return {x:x*co-y*si,y:x*si+y*co,z:(p.z||0)/scale}})
+ const L=lm[33]||lm[1];
+ const R=lm[263]||lm[1];
+
+ const cx=(L.x+R.x)/2;
+ const cy=(L.y+R.y)/2;
+
+ const dx=R.x-L.x;
+ const dy=R.y-L.y;
+
+ const scale=Math.hypot(dx,dy)||1;
+
+ const ang=Math.atan2(dy,dx);
+ const co=Math.cos(-ang);
+ const si=Math.sin(-ang);
+
+ return lm.map(p=>{
+  const x=(p.x-cx)/scale;
+  const y=(p.y-cy)/scale;
+
+  return {
+   x:x*co-y*si,
+   y:x*si+y*co,
+   z:(p.z||0)/scale
+  };
+ });
 }
+
+
 function signature(lm){
- const n=centerScale(lm), ids=[10,152,234,454,33,263,159,145,386,374,1,4,61,291,13,14,50,280,94,334,199];
- return ids.map(i=>{const p=n[i]||n[0];return [p.x,p.y,p.z]})
+ const n=centerScale(lm);
+
+ /*
+  表情や撮影条件の影響を受けにくい
+  顔の骨格・パーツ配置を中心に比較する
+ */
+
+ const ids=[
+  // 輪郭
+  10,152,234,454,
+  127,356,93,323,
+  132,361,58,288,
+
+  // 眉～目
+  33,133,159,145,
+  362,263,386,374,
+
+  // 鼻
+  1,2,4,5,6,
+  19,94,168,
+
+  // 口
+  61,291,13,14,
+
+  // その他の顔形状
+  50,280,199,175,18
+ ];
+
+ return ids.map(i=>{
+  const p=n[i]||n[0];
+  return [p.x,p.y,p.z];
+ });
 }
-function similarity(a,b){
- if(!a||!b||a.length!==b.length)return null;
+
+
+function shapeSimilarity(a,b){
+ if(!a||!b||a.length!==b.length)return 0;
 
  let d=0;
 
  for(let i=0;i<a.length;i++){
   const dx=a[i][0]-b[i][0];
   const dy=a[i][1]-b[i][1];
-  const dz=a[i][2]-b[i][2];
 
-  d+=Math.sqrt(dx*dx+dy*dy+dz*dz);
+  /*
+   Zは撮影角度の影響を受けやすいので
+   XYを強く評価する
+  */
+  const dz=(a[i][2]-b[i][2])*0.35;
+
+  d+=Math.sqrt(
+   dx*dx+
+   dy*dy+
+   dz*dz
+  );
  }
 
  d/=a.length;
 
- // 正規化後の顔形状の差を100点換算
- const score=100*Math.exp(-d*2.2);
-
- return Math.max(0,Math.min(100,score));
+ /*
+  小さな差は同一人物として許容し、
+  大きな差は急激に減点する
+  */
+ return Math.max(
+  0,
+  Math.min(
+   100,
+   100*Math.exp(-d*3.8)
+  )
+ );
 }
+
+
+function similarity(a,b){
+ if(!a||!b)return null;
+
+ const raw=shapeSimilarity(a,b);
+
+ /*
+  同一人物の別写真では
+  多少の表情・角度変化を許容する。
+
+  一方、別人の場合は
+  一定以上の形状差を大きく減点する。
+ */
+
+ let score;
+
+ if(raw>=75){
+  score=75+(raw-75)*1.0;
+ }
+ else if(raw>=50){
+  score=45+(raw-50)*1.2;
+ }
+ else{
+  score=raw*0.72;
+ }
+
+ return Math.max(
+  0,
+  Math.min(100,score)
+ );
+}
+ 
 function exposure(img){
  // Visual skin-area proxy, excluding the central face area so the face itself does not inflate exposure.
  const c=document.createElement("canvas"),w=140,h=Math.max(100,Math.round(140*img.naturalHeight/img.naturalWidth)),x=c.getContext("2d");c.width=w;c.height=h;x.drawImage(img,0,0,w,h);
@@ -193,8 +310,8 @@ const expContribution=Math.max(
   Math.min(100,100-Math.abs(ex-25)*1.15)
 );
 
-const raw=face*0.78+expContribution*0.22;
-const finalScore=strictScore(raw);
+const raw=face*0.90+expContribution*0.10;
+const finalScore=Math.round(raw);
 scoreEl.textContent=finalScore;commentEl.textContent=commentFor(finalScore);
 bg(finalScore);meter.querySelector(".rod").style.transform=`scaleY(${Math.max(.05,finalScore/100)})`;meter.classList.toggle("hot",finalScore>=70);
 note.textContent="測定完了。顔の特徴を比較しました。";
