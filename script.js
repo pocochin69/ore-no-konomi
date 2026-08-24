@@ -158,20 +158,36 @@ async function initFaceMesh(){
   if(typeof FaceMesh==='undefined')throw new Error('MediaPipe Face Mesh が読み込めませんでした。');
   faceMesh=new FaceMesh({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`});
   faceMesh.setOptions({maxNumFaces:2,refineLandmarks:true,minDetectionConfidence:.55,minTrackingConfidence:.55});
-  await new Promise((resolve,reject)=>{
-    let settled=false;
-    faceMesh.onResults((res)=>{faceMesh._lastResults=res;if(!settled){settled=true;resolve(res)}});
-    faceMesh._readyReject=reject;
-    setTimeout(()=>{if(!settled){settled=true;reject(new Error('AIモデルの初期化がタイムアウトしました。'))}},20000);
-    const blank=document.createElement('canvas');blank.width=2;blank.height=2;faceMesh.send({image:blank}).catch(reject);
-  });
+  // Do not send a dummy canvas here. Some Safari/iOS WebGL setups can reject it.
+  // The first real image is used to warm up the model instead.
 }
-async function detect(img){
-  faceMesh._lastResults=null;
-  await faceMesh.send({image:img});
-  const res=faceMesh._lastResults;
-  if(!res||!res.multiFaceLandmarks)return [];
-  return res.multiFaceLandmarks;
+
+async function detect(img, retries=2){
+  if(!faceMesh) throw new Error('AIモデルが準備できていません。');
+  let lastError=null;
+  for(let attempt=0;attempt<=retries;attempt++){
+    try{
+      const result=await new Promise((resolve,reject)=>{
+        let done=false;
+        const timer=setTimeout(()=>{
+          if(!done){done=true;reject(new Error('AI解析がタイムアウトしました。'));}
+        },12000);
+        faceMesh.onResults((res)=>{
+          if(done)return;
+          done=true;clearTimeout(timer);resolve(res);
+        });
+        Promise.resolve(faceMesh.send({image:img})).catch(err=>{
+          if(done)return;
+          done=true;clearTimeout(timer);reject(err);
+        });
+      });
+      return result && result.multiFaceLandmarks ? result.multiFaceLandmarks : [];
+    }catch(err){
+      lastError=err;
+      if(attempt<retries) await wait(500);
+    }
+  }
+  throw lastError || new Error('AI解析に失敗しました。');
 }
 
 async function loadTarget(){
@@ -210,7 +226,11 @@ async function processTest(file){
     const rawTotal=clamp(scores.face*.75+exposureMatch*.25,0,100);
     const total=strictScore(rawTotal);
     showResult(scores,exposureRate,total,rawTotal);
-  }catch(err){setAnalysis('測定器、再確認中……','画像をもう一度確認しています。',0);}
+  }catch(err){
+    console.warn('Face analysis did not complete:', err);
+    setAnalysis('測定器、待機中。','画像をもう一度投入すると再測定します。',100);
+    els.fileStatus.textContent='READY';
+  }
 }
 function showResult(scores,exposureRate,total,rawTotal){
   els.faceScore.textContent='';
