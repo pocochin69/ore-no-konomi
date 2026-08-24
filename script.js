@@ -79,6 +79,22 @@ function featureVector(lm){
 }
 function vecDistance(a,b){let sum=0,n=0; for(let i=0;i<a.length;i++){const d=a[i]-b[i];sum+=d*d;n++;} return Math.sqrt(sum/Math.max(n,1));}
 function similarity(a,b){return clamp(100*Math.exp(-3.0*vecDistance(a,b)));}
+
+// Strict final-score remapping. It intentionally compresses ordinary scores
+// and makes high scores much harder to reach. Required anchor points:
+// 70 -> 40, 90 -> 97, with smooth interpolation between them.
+function strictScore(raw){
+  const x=clamp(raw);
+  const points=[[0,0],[40,12],[50,20],[60,29],[70,40],[75,54],[80,68],[85,83],[90,97],[95,98.5],[100,100]];
+  for(let i=1;i<points.length;i++){
+    const [x1,y1]=points[i-1],[x2,y2]=points[i];
+    if(x<=x2){
+      const t=(x-x1)/(x2-x1);
+      return Math.round(y1+(y2-y1)*t);
+    }
+  }
+  return 100;
+}
 function ratioSimilarity(a,b){let dif=0;for(let i=0;i<a.length;i++){dif+=Math.min(Math.abs(a[i]-b[i])*2.8,1);}return clamp(100*(1-dif/a.length));}
 
 function computeFaceScores(a,b){
@@ -129,13 +145,13 @@ function toast(msg){els.toast.textContent=msg;els.toast.classList.add('show');cl
 function sparks(score){const count=score>=95?42:score>=85?24:score>=70?12:4;for(let i=0;i<count;i++){const s=document.createElement('div');s.className='spark '+(i%3===0?'star':'');s.style.left=(30+Math.random()*40)+'%';s.style.top=(20+Math.random()*45)+'%';s.style.setProperty('--dx',(Math.random()*260-130)+'px');s.style.setProperty('--dy',(Math.random()*-250-40)+'px');els.sparkLayer.appendChild(s);setTimeout(()=>s.remove(),1400)}}
 function verdict(score){
   if(score>=95)return ['この世界が丸い球体で出来ていると初めて気づいた人はこの銀河でさえも球体で構成された円で出来ていることに気づいていたのだろうか。この世はこんなにも円で構成されているのに円だけが数学ではっきりした他を持たない。自分自身が原子で構成されているのにもかかわらず自分自身を求めることはできないのだ。',''];
-  if(score>=90)return ['んっ…','測定器が何かを感じています。'];
-  if(score>=80)return ['ごっつええなぁ','かなり好み寄り。'];
-  if(score>=70)return ['ふう','なかなか来ています。'];
-  if(score>=60)return ['まあ、いけるべ','測定器、うなずいています。'];
-  if(score>=50)return ['今日は仕方なし、これでいいや','測定器は一応納得しています。'];
-  if(score>=40)return ['いまいちやな','もう一発いってみましょう。'];
-  return ['まだまだやな','測定器は静かです。'];
+  if(score>=90)return ['んっ…',''];
+  if(score>=80)return ['ごっつええなぁ',''];
+  if(score>=70)return ['ふう',''];
+  if(score>=60)return ['まあ、いけるべ',''];
+  if(score>=50)return ['今日は仕方なし、これでいいや',''];
+  if(score>=40)return ['いまいちやな',''];
+  return ['まだまだやな',''];
 }
 
 async function initFaceMesh(){
@@ -201,12 +217,12 @@ function showResult(scores,exposureRate,total,rawTotal){
   els.exposureScore.textContent=exposureRate;
   els.totalScore.textContent=total;
   els.shapeScore.textContent=Math.round(scores.shape)+'%';els.eyeScore.textContent=Math.round(scores.eyes)+'%';els.noseScore.textContent=Math.round(scores.nose)+'%';els.mouthScore.textContent=Math.round(scores.mouth)+'%';
-  const [v,sub]=verdict(total);els.verdict.textContent=v+(sub?' — '+sub:'');
+  const [v,sub]=verdict(total);els.verdict.textContent=v;
   els.resultSection.classList.remove('hidden');els.controls.classList.remove('hidden');
   document.body.classList.toggle('high',total>=80);
   els.meterBar.style.height=`${Math.max(3,total)}%`;
   els.meterRank.textContent=total>=95?'ULTRA RARE':total>=85?'GOLD':total>=70?'HOT':'NORMAL';
-  els.meterCaption.textContent=total>=95?'測定器、世界の真理に触れました。':total>=80?'ぐいーん！！ごっつ伸びました。':total>=70?'測定器、ちょっと照れています。':total>=60?'測定器、ちょっと嬉しそう。':'測定器は静かです。';
+  els.meterCaption.textContent=v;
   els.meterFlare.classList.toggle('active',total>=80);
   els.meterDevice.classList.toggle('balls-lit',total>=70);
   setAnalysis('測定完了！！',v,100);
